@@ -15,20 +15,6 @@ class Product:
         self.category = product_data.get('category', None)
 
 
-def read_products_from_file() -> List[Product]:
-    """Reads products from a JSON file and returns a list of Product objects."""
-    products = []
-    try:
-        with open('products.json', 'r') as file:
-            data = json.load(file)
-            for product_id, product_data in data.items():
-                product = Product(product_id, product_data)
-                products.append(product)
-    except FileNotFoundError:
-        print("Error: products file not found.")
-    return products
-
-
 class Discount:
     """A Discount class representing a discount code."""
 
@@ -48,22 +34,6 @@ class Discount:
             raise DiscountError("This discount code has already been used by this customer.")
         shopping_cart.apply_discount(self)
         self.used_by.append(customer.customer_id)
-
-def read_discounts_from_file() -> List[Discount]:
-    """Reads discount codes from a JSON file and returns a list of Discount objects."""
-    discounts = []
-    try:
-        with open('discounts.json', 'r') as file:
-            data = json.load(file)
-            for discount_data in data:
-                code = discount_data['code']
-                percentage = discount_data.get('discount_percentage', 0) # set default value if the key doesn't exist
-                used_by = [customer_id for customer_id in discount_data.get('used_by', [])]
-                discount = Discount(code, percentage, used_by)
-                discounts.append(discount)
-    except FileNotFoundError:
-        print("Error: discounts file not found.")
-    return discounts
 
 class ShoppingCart:
     """A ShoppingCart class representing a shopping cart."""
@@ -179,10 +149,33 @@ class Store:
         else:
             print("\nPurchase canceled.")
 
+   
+def read_data_from_file(filename: str, data_class):
+    data_dict = {}
+    try:
+        with open(filename, 'r') as file:
+            data = json.load(file)
+            if data_class == Product:
+                for product_id, product_data in data.items():
+                    data_instance = data_class(product_id, product_data)
+                    data_dict[product_id] = data_instance
+            elif data_class == Discount:
+                for discount_data in data:
+                    code = discount_data['code']
+                    percentage = discount_data.get('discount_percentage', 0)
+                    used_by = [customer_id for customer_id in discount_data.get('used_by', [])]
+                    discount = Discount(code, percentage, used_by)
+                    data_dict[code] = discount
+    except FileNotFoundError:
+        print(f"Error: {filename} file not found.")
+    return data_dict
+
+
+
 def main() -> None:
     customer = None
-    products = read_products_from_file()
-    discounts = read_discounts_from_file()
+    products = read_data_from_file('products.json', Product)
+    discounts = read_data_from_file('discounts.json', Discount)
     store = Store(products, discounts)
 
 
