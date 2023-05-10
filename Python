@@ -1,0 +1,296 @@
+import json
+from typing import List
+
+class Product:
+   """A Product class representing a product."""
+
+   def __init__(self, product_id: str, product_data: dict):
+        try:
+            self.name = product_data['name']
+            self.price = product_data['price']
+        except KeyError as e:
+            raise ValueError(f"Invalid product data: {e}")
+        self.product_id = product_id
+        self.exclusive = product_data.get('exclusive', False)
+        self.category = product_data.get('category', None)
+
+
+def read_products_from_file() -> List[Product]:
+    """Reads products from a JSON file and returns a list of Product objects."""
+    products = []
+    try:
+        with open('products.json', 'r') as file:
+            data = json.load(file)
+            for product_id, product_data in data.items():
+                product = Product(product_id, product_data)
+                products.append(product)
+    except FileNotFoundError:
+        print("Error: products file not found.")
+    return products
+
+
+class Discount:
+    """A Discount class representing a discount code."""
+
+    def __init__(self, code: str, discount_percentage: float, used_by: list = None):
+        self.code = code
+        self.discount_percentage = discount_percentage
+        self.used_by = used_by or []
+
+    class DiscountError(Exception):
+        pass
+
+    def apply_discount(self, shopping_cart: 'ShoppingCart', customer: 'Customer') -> None:
+        """Applies the discount to the shopping cart and adds the customer to the used_by list."""
+        if self in shopping_cart._discounts:
+            raise DiscountError("Discount has already been applied to the shopping cart.")
+        if customer.customer_id in self.used_by:
+            raise DiscountError("This discount code has already been used by this customer.")
+        shopping_cart.apply_discount(self)
+        self.used_by.append(customer.customer_id)
+
+def read_discounts_from_file() -> List[Discount]:
+    """Reads discount codes from a JSON file and returns a list of Discount objects."""
+    discounts = []
+    try:
+        with open('discounts.json', 'r') as file:
+            data = json.load(file)
+            for discount_data in data:
+                code = discount_data['code']
+                percentage = discount_data.get('discount_percentage', 0) # set default value if the key doesn't exist
+                used_by = [customer_id for customer_id in discount_data.get('used_by', [])]
+                discount = Discount(code, percentage, used_by)
+                discounts.append(discount)
+    except FileNotFoundError:
+        print("Error: discounts file not found.")
+    return discounts
+
+class ShoppingCart:
+    """A ShoppingCart class representing a shopping cart."""
+
+    def __init__(self):
+        self._items = {}
+        self._discount = None
+
+    def add_item(self, product: Product, quantity: int) -> None:
+        if not isinstance(product, Product):
+            raise ValueError("Invalid product parameter.")
+        if not isinstance(quantity, int):
+            raise ValueError("Invalid quantity parameter.")
+        self._items[product] = self._items.get(product, 0) + quantity
+
+    def remove_item(self, product: Product, quantity: int) -> None:
+        if not isinstance(product, Product):
+            raise ValueError("Invalid product parameter.")
+        if not isinstance(quantity, int):
+            raise ValueError("Invalid quantity parameter.")
+        if product in self._items:
+            self._items[product] -= quantity
+            if self._items[product] <= 0:
+                del self._items[product]
+        else:
+            print("Product not found in the shopping cart.")
+
+    def apply_discount(self, discount: Discount) -> None:
+        """Applies a discount to the shopping cart."""
+        self._discount = discount
+
+    def total_price(self) -> float:
+        """Calculates the total price of the items in the shopping cart after applying the discount."""
+        total = sum(item.price * quantity for item, quantity in self._items.items())
+        if self._discount:
+            total *= (1 - self._discount.discount_percentage)
+        return total
+
+    def display(self) -> None:
+        """Displays the items and their quantities in the shopping cart."""
+        if not self._items:
+            print("Your shopping cart is empty.")
+            return
+
+        print("\nItems in your shopping cart:")
+        for item, quantity in self._items.items():
+            print(f"{item.product_id}: {item.name} - ${item.price:.2f} x {quantity}")
+
+    def is_empty(self) -> bool:
+        """Checks if the shopping cart is empty."""
+        return not bool(self._items)
+
+class Customer:
+    """A Customer class representing a customer."""
+
+    def __init__(self, customer_id: str, name: str):
+        self.customer_id = customer_id
+        self.name = name
+        self.shopping_cart = ShoppingCart()
+
+class LoyalCustomer(Customer):
+    def __init__(self, customer_id: str, name: str):
+        super().__init__(customer_id, name)
+        self.exclusive_products = []
+
+    def __str__(self) -> str:
+        return f"Loyal Customer: {self.name}"
+
+class BargainHunter(Customer):
+    def __str__(self) -> str:
+        return f"Bargain Hunter: {self.name}"
+
+
+class Store:
+    """A store class representing a store with products."""
+
+    def __init__(self, products: dict, discounts: dict):
+        self._products = products
+        self._discounts = discounts
+
+    def get_product(self, product_id: str) -> Product:
+        product = self._products.get(product_id)
+        if not product:
+            raise ValueError(f"Product with ID {product_id} not found")
+        return product
+
+    def list_products(self, customer: 'Customer', category: str = None) -> None:
+        """Lists the available products for a customer, optionally filtering by category."""
+        print("\nAvailable Products:")
+        for product in self._products.values():
+            if category and product.category != category:
+                continue
+            if not product.exclusive or (product.exclusive and isinstance(customer, LoyalCustomer)):
+                print(f"{product.product_id}: {product.name} - ${product.price:.2f} - Category: {product.category}")
+
+    def get_discount(self, code: str) -> Discount:
+        """Gets a discount by its code."""
+        discount = self._discounts.get(code)
+        if not discount:
+            raise ValueError(f"Discount with code {code} not found")
+        return discount
+
+    def checkout(self, shopping_cart: 'ShoppingCart') -> None:
+        """Performs the checkout process, displaying the shopping cart items and the total price."""
+        print("\nCheckout Summary:")
+        shopping_cart.display()
+        total = shopping_cart.total_price()
+        print(f"\nTotal Price: ${total:.2f}")
+
+        proceed = input("Do you want to proceed with the purchase? (yes/no): ").lower()
+        if proceed == 'yes':
+            print("\nThank you for your purchase!")
+        else:
+            print("\nPurchase canceled.")
+
+def main() -> None:
+    customer = None
+    products = read_products_from_file()
+    discounts = read_discounts_from_file()
+    store = Store(products, discounts)
+
+
+
+
+    while True:
+        print("\nMenu:")
+        print("1. Create a customer.")
+        print("2. List products.")
+        print("3. List products by category.")
+        print("4. Add/remove a product to the shopping cart.")
+        print("5. Apply a discount code.")
+        print("6. See current shopping cart.")
+        print("7. Checkout.")
+        print("8. Exit.")
+
+        choice = input("\nEnter your choice: ")
+
+        if choice == '1':
+            customer_id = input("Enter your customer ID: ")
+            name = input("Enter your name: ")
+            while True:
+                customer_type = input("Are you a Loyal Customer or a Bargain Hunter? (L/B): ").upper()
+                if customer_type in ['L', 'B']:
+                    break
+                else:
+                    print("Invalid customer type. Please enter 'L' or 'B'.")
+            if customer_type == 'L':
+                customer = LoyalCustomer(customer_id, name)
+            else:
+                customer = BargainHunter(customer_id, name)
+            print(f"\nWelcome, {customer.name}!")
+
+        elif choice == '2':
+            if not customer:
+                print("Please create a customer first.")
+            else:
+                store.list_products(customer)
+
+        elif choice == '3':
+            if not customer:
+                print("Please create a customer first.")
+            else:
+                category_filter = input("Enter a category to filter products (leave blank to show all): ")
+                store.list_products(customer, category=category_filter if category_filter else None)
+
+        elif choice == '4':
+            if not customer:
+                print("Please create a customer first.")
+            else:
+                product_id = input("Enter the product ID: ")
+                product = store.get_product(product_id)
+                if not product:
+                    print("Invalid product ID.")
+                else:
+                    action_input = input("Do you want to add or remove the product? (A/R): ").upper()
+                    if action_input in ['A', 'R']:
+                        action = action_input
+                        quantity_input = input("Enter the quantity: ")
+                        if quantity_input.isdigit():
+                            quantity = int(quantity_input)
+                        if action == 'A':
+                            customer.shopping_cart.add_item(product, quantity)
+                        elif action == 'R':
+                            customer.shopping_cart.remove_item(product, quantity)
+                        else:
+                            print("Invalid action or quantity.")
+
+
+        elif choice == '5':
+                if not customer:
+                    print("Please create a customer first.")
+                elif customer.shopping_cart.is_empty():
+                    print("Your shopping cart is empty.")
+                else:
+                    code = input("Enter the discount code: ")
+                discount = store.get_discount(code)
+                if not discount:
+                    print("Invalid discount code.")
+                elif customer.customer_id in discount.used_by:
+                    print("This discount code has already been used by this customer.")
+
+                else:
+                    discount.apply_discount(customer.shopping_cart, customer)
+                print(f"Discount of {discount.discount_percentage * 100:.0f}% applied successfully.")
+
+        elif choice == '6':
+                if not customer:
+                    print("Please create a customer first.")
+                else:
+                    customer.shopping_cart.display()
+
+        elif choice == '7':
+            if not customer:
+                print("Please create a customer first.")
+            elif customer.shopping_cart.is_empty():
+                print("Your shopping cart is empty.")
+            else:
+                store.checkout(customer.shopping_cart)
+
+        elif choice == '8':
+            print("Goodbye!")
+            break
+        else:
+            print("Invalid choice. Please try again.")
+
+
+if __name__ == "__main__":
+    main()
+
+
