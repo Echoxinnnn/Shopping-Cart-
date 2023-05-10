@@ -2,9 +2,9 @@ import json
 from typing import List
 
 class Product:
-   """A Product class representing a product."""
+    """A Product class representing a product."""
 
-   def __init__(self, product_id: str, product_data: dict):
+    def __init__(self, product_id: str, product_data: dict):
         try:
             self.name = product_data['name']
             self.price = product_data['price']
@@ -112,11 +112,19 @@ class Store:
     """A store class representing a store with products."""
 
     def __init__(self, products: dict, discounts: dict):
+        # Check the type of the 'products' and 'discounts' arguments. 
+        # If they are not dictionaries, raise a ValueError.
+        if not isinstance(products, dict):
+            raise ValueError("Invalid products: expected a dictionary.")
+        if not isinstance(discounts, dict):
+            raise ValueError("Invalid discounts: expected a dictionary.")
         self._products = products
         self._discounts = discounts
 
     def get_product(self, product_id: str) -> Product:
         product = self._products.get(product_id)
+        if not isinstance(product_id, str):
+            raise ValueError("Invalid product ID: expected a string.")
         if not product:
             raise ValueError(f"Product with ID {product_id} not found")
         return product
@@ -156,6 +164,8 @@ def read_data_from_file(filename: str, data_class):
     try:
         with open(filename, 'r') as file:
             data = json.load(file)
+            if not isinstance(data, dict):
+                raise ValueError("Invalid file format: expected a dictionary.")
             if data_class == Product:
                 for product_id, product_data in data.items():
                     data_instance = data_class(product_id, product_data)
