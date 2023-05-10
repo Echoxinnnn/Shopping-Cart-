@@ -16,25 +16,52 @@ class Product:
         self.category = product_data.get('category', None)
 
 
-class Discount:
+class Discount(Exception):
     """A Discount class representing a discount code."""
+
+    discounts = {}  # class variable to keep track of all discounts
 
     def __init__(self, code: str, discount_percentage: float, used_by: list = None):
         self.code = code
         self.discount_percentage = discount_percentage
         self.used_by = used_by or []
-
-    class DiscountError(Exception):
-        pass
+        Discount.discounts[code] = self  # add the discount to the class variable when it's created
 
     def apply_discount(self, shopping_cart: 'ShoppingCart', customer: 'Customer') -> None:
         """Applies the discount to the shopping cart and adds the customer to the used_by list."""
-        if self in shopping_cart._discounts:
+        if shopping_cart._discount is not None:
             raise DiscountError("Discount has already been applied to the shopping cart.")
         if customer.customer_id in self.used_by:
             raise DiscountError("This discount code has already been used by this customer.")
         shopping_cart.apply_discount(self)
         self.used_by.append(customer.customer_id)
+        # Call the write_discounts_to_file function with the class attribute
+        self.write_discounts_to_file('discounts.json', Discount.discounts)
+
+    @classmethod
+    def write_discounts_to_file(cls, filename: str, discounts: dict) -> None:
+        # Initialize an empty list to store the discount data
+        discount_data = []
+
+        for discount in discounts.values():
+            # Create a dictionary for each discount with the necessary information
+            discount_dict = {
+                'code': discount.code,
+                'discount_percentage': discount.discount_percentage,
+                'used_by': list(discount.used_by)  # Convert the set back to a list for JSON serialization
+            }
+            # Add the dictionary to the discount data list
+            discount_data.append(discount_dict)
+
+        try:
+            with open(filename, 'w') as file:
+                # Dump the discount data list to the file in JSON format
+                json.dump(discount_data, file)
+        except FileNotFoundError:
+            raise DiscountError(f"Error: {filename} file not found.")
+        except Exception as e:
+            print(f"Error writing discounts to file: {e}")
+
 
 
 class ShoppingCart:
@@ -112,12 +139,12 @@ class BargainHunter(Customer):
         return f"Bargain Hunter: {self.name}"
 
 class Store:
-    """A store class representing a store with products."""
+        """A store class representing a store with products and discounts."""
 
-    def __init__(self, products: dict, discounts: dict):
-        # Initialize the store with its products and discounts as dictionaries
-        self._products = products
-        self._discounts = discounts
+        def __init__(self, products: dict, discounts: dict):
+            # Initialize the store with its products and discounts as dictionaries
+            self._products = products
+            self._discounts = discounts
 
     def get_product(self, product_id: str) -> Product:
         # Try to retrieve the product with the given ID from the products dictionary
@@ -201,7 +228,7 @@ def main() -> None:
     customer = None
     products = read_data_from_file('products.json', Product)
     discounts = read_data_from_file('discounts.json', Discount)
-    store = Store(products, discounts)
+    store = Store(products)
 
     while True:
         print("\nMenu:")
@@ -306,4 +333,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
