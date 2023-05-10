@@ -110,10 +110,11 @@ class BargainHunter(Customer):
 
 class Store:
     """A store class representing a store with products."""
+    """convert the lists of Products and Discounts into dictionaries"""
 
-    def __init__(self, products: dict, discounts: dict):
-        self._products = products
-        self._discounts = discounts
+    def __init__(self, products: List[Product], discounts: List[Discount]):
+        self._products = {product.product_id: product for product in products}
+        self._discounts = {discount.code: discount for discount in discounts}
 
     def get_product(self, product_id: str) -> Product:
         product = self._products.get(product_id)
@@ -152,14 +153,17 @@ class Store:
             
             
 def read_data_from_file(filename: str, data_class):
+    ## Initialize an empty list to hold the data instances.
     data_list = []
     try:
         with open(filename, 'r') as file:
             data = json.load(file)
+            # If the class is Product, create Product instances.
             if data_class == Product:
                 for product_id, product_data in data.items():
                     data_instance = data_class(product_id, product_data)
                     data_list.append(data_instance)
+            # If the class is Discount, create Discount instances.        
             elif data_class == Discount:
                 for discount_data in data:
                     code = discount_data['code']
