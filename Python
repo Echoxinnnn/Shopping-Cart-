@@ -1,10 +1,9 @@
 import json
-from typing import List
+
 
 class Product:
-   """A Product class representing a product."""
-
-   def __init__(self, product_id: str, product_data: dict):
+    """A Product class representing a product."""
+    def __init__(self, product_id: str, product_data: dict):
         try:
             self.name = product_data['name']
             self.price = product_data['price']
@@ -14,63 +13,78 @@ class Product:
         self.exclusive = product_data.get('exclusive', False)
         self.category = product_data.get('category', None)
 
-
-def read_products_from_file() -> List[Product]:
-    """Reads products from a JSON file and returns a list of Product objects."""
-    products = []
-    try:
-        with open('products.json', 'r') as file:
-            data = json.load(file)
-            for product_id, product_data in data.items():
-                product = Product(product_id, product_data)
-                products.append(product)
-    except FileNotFoundError:
-        print("Error: products file not found.")
-    return products
+        # print instances of the classe
+    def __str__(self):
+        return f"Product {self.product_id}: {self.name}, ${self.price}"
 
 
-class Discount:
+class Discount(Exception):
     """A Discount class representing a discount code."""
+
+    discounts = {}  # class variable to keep track of all discounts
 
     def __init__(self, code: str, discount_percentage: float, used_by: list = None):
         self.code = code
         self.discount_percentage = discount_percentage
         self.used_by = used_by or []
+        Discount.discounts[code] = self  # add the discount to the class variable when it's created
 
-    class DiscountError(Exception):
-        pass
+    # print instances of the class
+    def __str__(self):
+        return f"Discount {self.code}: {self.discount_percentage * 100}% off"
 
     def apply_discount(self, shopping_cart: 'ShoppingCart', customer: 'Customer') -> None:
         """Applies the discount to the shopping cart and adds the customer to the used_by list."""
-        if self in shopping_cart._discounts:
+        if shopping_cart._discount is not None:
             raise DiscountError("Discount has already been applied to the shopping cart.")
         if customer.customer_id in self.used_by:
             raise DiscountError("This discount code has already been used by this customer.")
         shopping_cart.apply_discount(self)
         self.used_by.append(customer.customer_id)
 
-def read_discounts_from_file() -> List[Discount]:
-    """Reads discount codes from a JSON file and returns a list of Discount objects."""
-    discounts = []
-    try:
-        with open('discounts.json', 'r') as file:
-            data = json.load(file)
-            for discount_data in data:
-                code = discount_data['code']
-                percentage = discount_data.get('discount_percentage', 0) # set default value if the key doesn't exist
-                used_by = [customer_id for customer_id in discount_data.get('used_by', [])]
-                discount = Discount(code, percentage, used_by)
-                discounts.append(discount)
-    except FileNotFoundError:
-        print("Error: discounts file not found.")
-    return discounts
+        # Apply the discount to each product in the shopping cart that has the same product ID as the product that the discount applies to
+        for item in shopping_cart._items:
+            if isinstance(item, Product) and item.exclusive and not isinstance(customer, LoyalCustomer):
+                continue
+            item.price *= (1 - self.discount_percentage)
+        # Call the write_discounts_to_file function with the class attribute
+        self.write_discounts_to_file('discounts.json', Discount.discounts)
+
+    @classmethod
+    def write_discounts_to_file(cls, filename: str, discounts: dict) -> None:
+        # Initialize an empty list to store the discount data
+        discount_data = []
+
+        for discount in discounts.values():
+            # Create a dictionary for each discount with the necessary information
+            discount_dict = {
+                'code': discount.code,
+                'discount_percentage': discount.discount_percentage,
+                'used_by': list(discount.used_by)  # Convert the set back to a list for JSON serialization
+            }
+            # Add the dictionary to the discount data list
+            discount_data.append(discount_dict)
+
+        try:
+            with open(filename, 'w') as file:
+                # Dump the discount data list to the file in JSON format
+                json.dump(discount_data, file)
+        except FileNotFoundError:
+            raise DiscountError(f"Error: {filename} file not found.")
+        except Exception as e:
+            print(f"Error writing discounts to file: {e}")
+
+
 
 class ShoppingCart:
     """A ShoppingCart class representing a shopping cart."""
-
     def __init__(self):
         self._items = {}
         self._discount = None
+
+    #print instances of the class
+    def __str__(self):
+        return f"Shopping Cart with {len(self._items)} items"
 
     def add_item(self, product: Product, quantity: int) -> None:
         if not isinstance(product, Product):
@@ -97,7 +111,7 @@ class ShoppingCart:
 
     def total_price(self) -> float:
         """Calculates the total price of the items in the shopping cart after applying the discount."""
-        total = sum(item.price * quantity for item, quantity in self._items.items())
+        total = sum(self._items[item] * item.price for item in self._items)
         if self._discount:
             total *= (1 - self._discount.discount_percentage)
         return total
@@ -116,6 +130,7 @@ class ShoppingCart:
         """Checks if the shopping cart is empty."""
         return not bool(self._items)
 
+
 class Customer:
     """A Customer class representing a customer."""
 
@@ -123,6 +138,66 @@ class Customer:
         self.customer_id = customer_id
         self.name = name
         self.shopping_cart = ShoppingCart()
+    #print instance
+    def __str__(self):
+        return f"Customer {self.customer_id}: {self.name}"
+
+    @staticmethod
+    def create_customer(filename: str) -> 'Customer':
+        customers = read_data_from_file(filename, Customer)
+        while True:
+            customer_id = input("Enter your customer ID: ")
+            if customer_id in customers:
+                print("Customer ID already exists. Please enter a unique ID.")
+            else:
+                break
+        name = input("Enter your name: ")
+        while True:
+            customer_type = input("Are you a Loyal Customer or a Bargain Hunter? (L/B): ").upper()
+            if customer_type in ['L', 'B']:
+                break
+            else:
+                print("Invalid customer type. Please enter 'L' or 'B'.")
+
+        if customer_type == 'L':
+            customer = LoyalCustomer(customer_id, name)
+        else:
+            customer = BargainHunter(customer_id, name)
+
+        customers[customer_id] = customer
+
+        # Write the updated customers back to the file
+        Customer.write_customers_to_file(filename, customers)
+
+        print(f"\nWelcome, {customer.name}!")
+
+        return customer
+
+
+    @classmethod
+    def write_customers_to_file(cls, filename: str, customers: dict) -> None:
+        # Initialize an empty list to store the customer data
+        customer_data = []
+
+        for customer in customers.values():
+            # Create a dictionary for each customer with the necessary information
+            customer_dict = {
+                'customer_id': customer.customer_id,
+                'name': customer.name,
+                'type': customer.__class__.__name__
+            }
+
+            # Add the dictionary to the customer data list
+            customer_data.append(customer_dict)
+
+        try:
+            with open(filename, 'w') as file:
+                # Dump the customer data list to the file in JSON format
+                json.dump(customer_data, file)
+        except FileNotFoundError:
+            raise Exception(f"Error: {filename} file not found.")
+        except Exception as e:
+            print(f"Error writing customers to file: {e}")
 
 class LoyalCustomer(Customer):
     def __init__(self, customer_id: str, name: str):
@@ -133,18 +208,26 @@ class LoyalCustomer(Customer):
         return f"Loyal Customer: {self.name}"
 
 class BargainHunter(Customer):
-    def __str__(self) -> str:
-        return f"Bargain Hunter: {self.name}"
+   def __str__(self) -> str:
+       return f"Bargain Hunter: {self.name}"
 
 
 class Store:
-    """A store class representing a store with products."""
+    """A store class representing a store with products and discounts."""
 
     def __init__(self, products: dict, discounts: dict):
+        # Initialize the store with its products and discounts as dictionaries
         self._products = products
         self._discounts = discounts
 
+        # print instance: list of all products and discounts in the store
+    def __str__(self):
+        product_str = ", ".join([str(product) for product in self._products.values()])
+        discount_str = ", ".join([str(discount) for discount in self._discounts.values()])
+        return f"Store: \nProducts: {product_str} \nDiscounts: {discount_str}"
+
     def get_product(self, product_id: str) -> Product:
+        # Try to retrieve the product with the given ID from the products dictionary
         product = self._products.get(product_id)
         if not product:
             raise ValueError(f"Product with ID {product_id} not found")
@@ -152,15 +235,32 @@ class Store:
 
     def list_products(self, customer: 'Customer', category: str = None) -> None:
         """Lists the available products for a customer, optionally filtering by category."""
-        print("\nAvailable Products:")
+        filtered_products = []
+
         for product in self._products.values():
             if category and product.category != category:
                 continue
+            # If the product is not exclusive or if it's exclusive and the customer is a loyal customer, add the product to the filtered list
             if not product.exclusive or (product.exclusive and isinstance(customer, LoyalCustomer)):
-                print(f"{product.product_id}: {product.name} - ${product.price:.2f} - Category: {product.category}")
+                filtered_products.append(
+                    f"{product.product_id}: {product.name} - ${product.price:.2f} - Category: {product.category}")
+
+        if filtered_products:
+            print("\nAvailable Products:")
+            for product in filtered_products:
+                print(product)
+        else:
+            if category is None or category == "":
+                print("Available Categories:")
+                categories = set([product.category for product in self._products.values()])
+                for category in categories:
+                    print(category)
+            else:
+                print("No products available in this category.")
 
     def get_discount(self, code: str) -> Discount:
         """Gets a discount by its code."""
+        # Try to retrieve the discount with the given code from the discounts dictionary
         discount = self._discounts.get(code)
         if not discount:
             raise ValueError(f"Discount with code {code} not found")
@@ -170,23 +270,81 @@ class Store:
         """Performs the checkout process, displaying the shopping cart items and the total price."""
         print("\nCheckout Summary:")
         shopping_cart.display()
-        total = shopping_cart.total_price()
+        total = shopping_cart.total_price()  # Calculate the total price of the items in the shopping cart
         print(f"\nTotal Price: ${total:.2f}")
 
+        # Ask the user if they want to proceed with the purchase
         proceed = input("Do you want to proceed with the purchase? (yes/no): ").lower()
+        while proceed not in ['yes', 'no']:
+            print("Invalid input. Please enter 'yes' or 'no'.")
+            proceed = input("Do you want to proceed with the purchase? (yes/no): ").lower()
         if proceed == 'yes':
             print("\nThank you for your purchase!")
         else:
             print("\nPurchase canceled.")
 
+
+def read_data_from_file(filename: str, data_class):
+    # Initialize an empty dictionary to store the data
+    data_dict = {}
+
+    try:
+        with open(filename, 'r') as file:
+            # Load the JSON data from the file
+            data = json.load(file)
+
+            # If the data_class is Product, handle the data accordingly
+            if data_class == Product:
+                for product_id, product_data in data.items():
+                    data_instance = data_class(product_id, product_data)
+                    # Add the new Product instance to the data dictionary with the product_id as the key
+                    data_dict[product_id] = data_instance
+
+            # If the data_class is Discount, handle the data accordingly
+            elif data_class == Discount:
+                for discount_data in data:
+                    # Extract the necessary information from the data
+                    code = discount_data['code']
+                    percentage = discount_data.get('discount_percentage', 0)
+                    used_by = [customer_id for customer_id in discount_data.get('used_by', [])]
+
+                    # Create a new instance of the Discount class with the extracted data
+                    discount = Discount(code, percentage, used_by)
+
+                    # Add the new Discount instance to the data dictionary with the code as the key
+                    data_dict[code] = discount
+                    # If the data_class is Customer, handle the data accordingly
+            elif data_class == Customer:
+                for customer_data in data:
+                    # Extract the necessary information from the data
+                    customer_id = customer_data['customer_id']
+                    name = customer_data['name']
+                    type = customer_data['type']
+
+                    # Create a new instance of the Customer class (or its subclass) with the extracted data
+                    if type == 'LoyalCustomer':
+                        customer = LoyalCustomer(customer_id, name)
+                    else:  # type == 'BargainHunter'
+                        customer = BargainHunter(customer_id, name)
+
+                    # Add the new Customer instance to the data dictionary with the customer_id as the key
+                    data_dict[customer_id] = customer
+
+    except FileNotFoundError:
+        print(f"Error: {filename} file not found.")
+
+    # Return the data dictionary
+    return data_dict
+
 def main() -> None:
     customer = None
-    products = read_products_from_file()
-    discounts = read_discounts_from_file()
-    store = Store(products, discounts)
+    #read data from files
+    products = read_data_from_file('products.json', Product)
+    discounts = read_data_from_file('discounts.json', Discount)
+    customers = read_data_from_file('customers.json', Customer)
 
-
-
+    store = Store(products,discounts)
+    shopping_cart = ShoppingCart()
 
     while True:
         print("\nMenu:")
@@ -202,19 +360,7 @@ def main() -> None:
         choice = input("\nEnter your choice: ")
 
         if choice == '1':
-            customer_id = input("Enter your customer ID: ")
-            name = input("Enter your name: ")
-            while True:
-                customer_type = input("Are you a Loyal Customer or a Bargain Hunter? (L/B): ").upper()
-                if customer_type in ['L', 'B']:
-                    break
-                else:
-                    print("Invalid customer type. Please enter 'L' or 'B'.")
-            if customer_type == 'L':
-                customer = LoyalCustomer(customer_id, name)
-            else:
-                customer = BargainHunter(customer_id, name)
-            print(f"\nWelcome, {customer.name}!")
+            customer = Customer.create_customer('customers.json')
 
         elif choice == '2':
             if not customer:
@@ -238,6 +384,7 @@ def main() -> None:
                 if not product:
                     print("Invalid product ID.")
                 else:
+                    print(f"{product.product_id}: {product.name} - ${product.price:.2f} - Category: {product.category}")
                     action_input = input("Do you want to add or remove the product? (A/R): ").upper()
                     if action_input in ['A', 'R']:
                         action = action_input
@@ -252,28 +399,29 @@ def main() -> None:
                             print("Invalid action or quantity.")
 
 
-        elif choice == '5':
-                if not customer:
-                    print("Please create a customer first.")
-                elif customer.shopping_cart.is_empty():
-                    print("Your shopping cart is empty.")
-                else:
-                    code = input("Enter the discount code: ")
-                discount = store.get_discount(code)
-                if not discount:
-                    print("Invalid discount code.")
-                elif customer.customer_id in discount.used_by:
-                    print("This discount code has already been used by this customer.")
 
-                else:
-                    discount.apply_discount(customer.shopping_cart, customer)
-                print(f"Discount of {discount.discount_percentage * 100:.0f}% applied successfully.")
+        elif choice == '5':
+            if not customer:
+                print("Please create a customer first.")
+            elif customer.shopping_cart.is_empty():
+                print("Your shopping cart is empty.")
+            else:
+                code = input("Enter the discount code: ")
+            discount = store.get_discount(code)
+            if not discount:
+                print("Invalid discount code.")
+            elif customer.customer_id in discount.used_by:
+                print("This discount code has already been used by this customer.")
+
+            else:
+                discount.apply_discount(customer.shopping_cart, customer)
+            print(f"Discount of {discount.discount_percentage * 100:.0f}% applied successfully.")
 
         elif choice == '6':
-                if not customer:
-                    print("Please create a customer first.")
-                else:
-                    customer.shopping_cart.display()
+            if not customer:
+                print("Please create a customer first.")
+            else:
+                customer.shopping_cart.display()
 
         elif choice == '7':
             if not customer:
@@ -289,8 +437,8 @@ def main() -> None:
         else:
             print("Invalid choice. Please try again.")
 
-
 if __name__ == "__main__":
     main()
-
+    Discount.write_discounts_to_file('discounts.json', Discount.discounts)
+    Customer.write_customers_to_file('customers.json', customers)
 
